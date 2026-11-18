@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FASTA to AlphaFold3 JSON</title>
+<link rel="icon" type="image/jpeg" href="afologo.jpg">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5b6474;
+    --border: #d8dce3; --accent: #2a62d6; --accent-text: #ffffff;
+    --warn-bg: #fff5e0; --warn-text: #7a4d00; --err-bg: #fde8e8; --err-text: #8a1c1c;
+    --ok-text: #1d6b35; --code-bg: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c; --panel: #1c2027; --text: #e4e7ec; --muted: #9aa3b2;
+      --border: #313744; --accent: #5b8cf0; --accent-text: #0d1117;
+      --warn-bg: #3a2e12; --warn-text: #f3c56b; --err-bg: #3d1d1d; --err-text: #f2a3a3;
+      --ok-text: #7fd39a; --code-bg: #12151a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  section {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  h2 { font-size: 1rem; margin: 0 0 12px; }
+  #drop {
+    border: 2px dashed var(--border); border-radius: 8px; padding: 18px;
+    text-align: center; color: var(--muted); cursor: pointer; margin-bottom: 10px;
+  }
+  #drop.over { border-color: var(--accent); color: var(--text); }
+  textarea {
+    width: 100%; min-height: 160px; resize: vertical; padding: 10px;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--code-bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; }
+  label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+  .hint { font-weight: 400; color: var(--muted); font-size: 0.82rem; }
+  input[type=text], input[type=number], input[type=date], select {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel); color: var(--text); font: inherit;
+  }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+  .check input { margin-top: 4px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  button {
+    padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font: inherit; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #messages div { padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; font-size: 0.9rem; }
+  .warn { background: var(--warn-bg); color: var(--warn-text); }
+  .err { background: var(--err-bg); color: var(--err-text); }
+  .ok { color: var(--ok-text); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+  td input[type=text] { padding: 4px 6px; font-size: 0.85rem; min-width: 180px; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; max-height: 360px; overflow: auto; font-size: 12px; margin: 0;
+  }
+  ol { margin: 0; padding-left: 20px; }
+  .hidden { display: none; }
+  .comp {
+    display: grid; grid-template-columns: 120px 1fr 80px auto; gap: 8px;
+    align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border);
+  }
+  .comp:first-child { padding-top: 0; }
+  .comp .cstatus { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.85rem; }
+  .comp .cstatus .check { margin: 0; font-size: 0.85rem; }
+  .comp input[type=text] { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .comp button.remove { padding: 6px 10px; }
+  .bad { color: var(--err-text); }  #components:empty::before { content: "No components added."; color: var(--muted); font-size: 0.9rem; }
+  @media (max-width: 600px) {
+    .comp { grid-template-columns: 1fr 80px auto; }
+    .comp .cval { grid-column: 1 / -1; grid-row: 2; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>FASTA to AlphaFold3 JSON</h1>
+  <p class="lead">Convert a multi-sequence protein FASTA file into an AlphaFold Server job file. Everything runs in your browser, and nothing is uploaded.</p>
+
+  <section>
+    <h2>1. Input FASTA</h2>
+    <div id="drop">Drop a .fasta / .fa / .txt file here, or click to choose one</div>
+    <input type="file" id="file" accept=".fasta,.fa,.faa,.fas,.txt" class="hidden">
+    <textarea id="fasta" spellcheck="false" placeholder=">protein_1&#10;MLSGKARAHTNIALIKYWGK...&#10;>protein_2&#10;MLSGKARAHTNIALIKYWGK..."></textarea>
+  </section>
+
+  <section>
+    <h2>2. Options</h2>
+    <div class="grid">
+      <div>
+        <label for="mode">Job layout</label>
+        <select id="mode">
+          <option value="each">One job per sequence</option>
+          <option value="complex">All sequences in a single job (complex)</option>
+        </select>
+      </div>
+      <div>
+        <label for="count">Copies per chain <span class="hint">(count)</span></label>
+        <input type="number" id="count" min="1" value="1">
+      </div>
+      <div>
+        <label for="prefix">Job name prefix <span class="hint">(optional)</span></label>
+        <input type="text" id="prefix" placeholder="e.g. batch1_">
+      </div>
+      <div>
+        <label for="seeds">Model seeds <span class="hint">(blank = random, recommended)</span></label>
+        <input type="text" id="seeds" placeholder="e.g. 1593933729, 4273">
+      </div>
+      <div>
+        <label class="check"><input type="checkbox" id="useTemplate" checked> <span>Use PDB structure templates <span class="hint">(default; uses similar solved structures as hints. Turn off to test designed sequences without template bias)</span></span></label>
+        <label class="check"><input type="checkbox" id="firstWord" checked> Use only the first word of each header as the name</label>
+        <label class="check"><input type="checkbox" id="stripStop" checked> Remove trailing <code>*</code> stop characters</label>
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="clear">Clear</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Add to every job <span class="hint">(optional)</span></h2>
+    <p class="hint" style="margin-top:-6px">Ligands, ions, DNA, RNA or extra protein chains added to each job after its own protein chain. In single-job (complex) mode they are added once.</p>
+    <div id="components"></div>
+    <div class="buttons"><button id="addComp">+ Add component</button></div>
+  </section>
+
+  <section id="resultSection" class="hidden">
+    <h2>4. Result</h2>
+    <div id="messages"></div>
+    <div class="table-wrap"><table id="table"></table></div>
+    <p class="hint" id="nameHint">You can edit job names in the table before downloading.</p>
+    <div class="buttons">
+      <button class="primary" id="download">Download JSON</button>
+      <button id="copy">Copy JSON</button>
+    </div>
+    <h2 style="margin-top:16px">Preview</h2>
+    <pre id="preview"></pre>
+  </section>
+
+  <section>
+    <h2>Using the file on AlphaFold Server</h2>
+    <ol>
+      <li>Go to <a href="https://alphafoldserver.com" target="_blank" rel="noopener">alphafoldserver.com</a> and click <strong>Upload JSON</strong>.</li>
+      <li>Each job in the file is saved as a draft. Uploading does <em>not</em> start them.</li>
+      <li>Open each draft so it fills in the sequence boxes, then press <strong>Continue and preview job</strong> and <strong>Confirm and submit job</strong>. The job names stay the same.</li>
+    </ol>
+    <p class="hint">Format reference: <a href="https://github.com/google-deepmind/alphafold/tree/main/server" target="_blank" rel="noopener">google-deepmind/alphafold/server</a>. Only the 20 standard amino acids are accepted by AlphaFold Server.</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const VALID = /^[ACDEFGHIKLMNPQRSTVWY]+$/;
+  let records = [];   // {name, sequence, jobName, edited}
+  let baseName = "alphafold_jobs";
+  let complexOverride = null;   // user-edited name for single-job mode
+  let comps = [];     // {type, value, count, ds}
+
+  // Allowed codes, from github.com/google-deepmind/alphafold/tree/main/server
+  const LIGANDS = [
+    ["CCD_ADP", "ADP"], ["CCD_ATP", "ATP"], ["CCD_AMP", "AMP"], ["CCD_GTP", "GTP"], ["CCD_GDP", "GDP"],
+    ["CCD_FAD", "FAD"], ["CCD_NAD", "NAD"], ["CCD_NAP", "NADP (NAP)"], ["CCD_NDP", "NADPH (NDP)"],
+    ["CCD_HEM", "Heme (HEM)"], ["CCD_HEC", "Heme C (HEC)"], ["CCD_PLM", "Palmitic acid (PLM)"],
+    ["CCD_OLA", "Oleic acid (OLA)"], ["CCD_MYR", "Myristic acid (MYR)"], ["CCD_CIT", "Citric acid (CIT)"],
+    ["CCD_CLA", "Chlorophyll A (CLA)"], ["CCD_CHL", "Chlorophyll B (CHL)"],
+    ["CCD_BCL", "Bacteriochlorophyll A (BCL)"], ["CCD_BCB", "Bacteriochlorophyll B (BCB)"]
+  ];
+  const IONS = [
+    ["MG", "Mg²⁺ (MG)"], ["ZN", "Zn²⁺ (ZN)"], ["CL", "Cl⁻ (CL)"], ["CA", "Ca²⁺ (CA)"], ["NA", "Na⁺ (NA)"],
+    ["MN", "Mn²⁺ (MN)"], ["K", "K⁺ (K)"], ["FE", "Fe³⁺ (FE)"], ["CU", "Cu²⁺ (CU)"], ["CO", "Co²⁺ (CO)"]
+  ];
+  const TYPES = [["ligand", "Ligand"], ["ccd", "Custom CCD code"],["ion", "Ion"], ["dna", "DNA"], ["rna", "RNA"], ["protein", "Protein"]];
+  const ALPHABET = { protein: VALID, dna: /^[ACGT]+$/, rna: /^[ACGU]+$/ };
+  const UNIT = { protein: "aa", dna: "nt", rna: "nt" };
+
+  // ---------- file input ----------
+  const drop = $("drop"), fileInput = $("file");
+  drop.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => fileInput.files[0] && readFile(fileInput.files[0]));
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault(); drop.classList.remove("over");
+    if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+  function readFile(file) {
+    baseName = file.name.replace(/\.[^.]+$/, "") || baseName;
+    const r = new FileReader();
+    r.onload = () => { $("fasta").value = r.result; records = []; complexOverride = null; drop.textContent = "Loaded: " + file.name; convert(); };
+    r.readAsText(file);
+  }
+
+  // ---------- parsing ----------
+  function parseFasta(text, firstWord, stripStop) {
+    const out = [];
+    let cur = null;
+    text.replace(/\r/g, "").split("\n").forEach((line) => {
+      line = line.trim();
+      if (!line || line.startsWith(";")) return;
+      if (line.startsWith(">")) {
+        let name = line.slice(1).trim();
+        if (firstWord) name = name.split(/\s+/)[0];
+        cur = { name: name, sequence: "" };
+        out.push(cur);
+      } else {
+        if (!cur) { cur = { name: "", sequence: "" }; out.push(cur); }
+        cur.sequence += line.replace(/\s+/g, "");
+      }
+    });
+    out.forEach((r) => {
+      r.sequence = r.sequence.toUpperCase();
+      if (stripStop) r.sequence = r.sequence.replace(/\*+$/, "");
+    });
+    return out;
+  }
+
+  function parseSeeds(s) {
+    const parts = s.split(/[\s,;]+/).filter(Boolean);
+    const bad = parts.filter((p) => !/^\d+$/.test(p) || Number(p) > 4294967295);
+    return { seeds: parts, bad };
+  }
+
+  // ---------- building ----------
+  function chain(seq, count) {
+    const c = { sequence: seq, count: count };
+    if (!$("useTemplate").checked) c.useStructureTemplate = false;
+    return { proteinChain: c };
+  }
+
+  function buildJobs() {
+    const count = Math.max(1, parseInt($("count").value, 10) || 1);
+    const seeds = parseSeeds($("seeds").value).seeds;
+    const job = (name, seqs) => ({
+      name: name,
+      modelSeeds: seeds.slice(),
+      sequences: seqs.map((s) => chain(s, count)).concat(compEntities()),
+      dialect: "alphafoldserver",
+      version: 1
+    });
+    if ($("mode").value === "complex") {
+      return [job(records.complexName, records.map((r) => r.sequence))];
+    }
+    return records.map((r) => job(r.jobName, [r.sequence]));
+  }
+
+  // ---------- shared components ----------
+  const cleanSeq = (s) => s.toUpperCase().replace(/\s+/g, "");
+  const ccdCode = (s) => s.toUpperCase().replace(/\s+/g, "").replace(/^CCD_/, "");
+  const revComp =(s) => s.split("").reverse().map((b) => ({ A: "T", T: "A", G: "C", C: "G" })[b]).join("");
+
+  function compStatus(c) {
+    if (c.type === "ligand" || c.type === "ion") return { ok: true, text: "" };
+    if (c.type === "ccd") {
+      const code = ccdCode(c.value);
+      if (!code) return { ok: false, text: "Enter a CCD code, e.g. D6P" };
+      if (!/^[A-Z0-9]{1,5}$/.test(code)) return { ok: false, text: "CCD codes are 1 to 5 letters or digits" };
+      return { ok: true, text: "CCD_" + code };
+    }
+    const seq = cleanSeq(c.value);
+    if (!seq) return { ok: false, text: "Enter a sequence" };
+    if (!ALPHABET[c.type].test(seq)) {
+      const bad = [...new Set(seq.replace(c.type === "protein" ? /[ACDEFGHIKLMNPQRSTVWY]/g : c.type === "dna" ? /[ACGT]/g : /[ACGU]/g, ""))].join(" ");
+      const allowed = c.type === "protein" ? "the 20 standard amino acids" : c.type === "dna" ? "A, C, G, T" : "A, C, G, U";
+      return { ok: false, text: "Invalid characters: " + bad + " (only " + allowed + ")" };
+    }
+    return { ok: true, text: seq.length + " " + UNIT[c.type] };
+  }
+
+  function compEntities() {
+    const out = [];
+    comps.forEach((c) => {
+      if (!compStatus(c).ok) return;
+      const n = Math.max(1, parseInt(c.count, 10) || 1);
+      const seq = cleanSeq(c.value);
+      if (c.type === "ligand") out.push({ ligand: { ligand: c.value, count: n } });
+      else if (c.type === "ccd") out.push({ ligand: { ligand: "CCD_" + ccdCode(c.value), count: n } });
+      else if (c.type === "ion") out.push({ ion: { ion: c.value, count: n } });
+      else if (c.type === "protein") out.push(chain(seq, n));
+      else if (c.type === "rna") out.push({ rnaSequence: { sequence: seq, count: n } });
+      else if (c.type === "dna") {
+        out.push({ dnaSequence: { sequence: seq, count: n } });
+        if (c.ds) out.push({ dnaSequence: { sequence: revComp(seq), count: n } });
+      }
+    });
+    return out;
+  }
+
+  function refreshIfShown() {
+    if (!$("resultSection").classList.contains("hidden") && records.length) refresh();
+  }
+
+  function renderComps() {
+    const box = $("components");
+    box.innerHTML = "";
+    comps.forEach((c, i) => {
+      const row = document.createElement("div");
+      row.className = "comp";
+
+      const type = document.createElement("select");
+      type.setAttribute("aria-label", "Component type");
+      TYPES.forEach(([v, l]) => type.add(new Option(l, v, false, v === c.type)));
+      type.addEventListener("change", () => {
+        c.type = type.value;
+        c.value = c.type === "ligand" ? "CCD_ATP" : c.type === "ion" ? "MG" : "";
+        c.ds = false;
+        renderComps(); refreshIfShown();
+      });
+
+      const status = document.createElement("div");
+      status.className = "cstatus";
+      const statusText = document.createElement("span");
+      const updateStatus = () => {
+        const s = compStatus(c);
+        statusText.textContent = s.text;
+        statusText.className = s.ok ? "hint" : "bad";
+      };
+
+      let val;
+      if (c.type === "ligand" || c.type === "ion") {
+        val = document.createElement("select");
+        (c.type === "ligand" ? LIGANDS : IONS).forEach(([v, l]) => val.add(new Option(l, v, false, v === c.value)));
+        val.addEventListener("change", () => { c.value = val.value; refreshIfShown(); });
+      } else {
+        val = document.createElement("input");
+        val.type = "text"; val.spellcheck = false; val.value = c.value;
+        val.placeholder = c.type === "protein" ? "Protein sequence"
+          : c.type === "ccd" ? "CCD code, e.g. D6P"
+          : c.type.toUpperCase() + " sequence (5' to 3')";
+        val.addEventListener("input", () => { c.value = val.value; updateStatus(); refreshIfShown(); });
+      }
+      val.classList.add("cval");
+      val.setAttribute("aria-label", "Component value");
+
+      const count = document.createElement("input");
+      count.type = "number"; count.min = "1"; count.value = c.count;
+      count.title = "Copies"; count.setAttribute("aria-label", "Copies");
+      count.addEventListener("input", () => { c.count = count.value; refreshIfShown(); });
+
+      const remove = document.createElement("button");
+      remove.className = "remove"; remove.textContent = "✕"; remove.title = "Remove";
+      remove.setAttribute("aria-label", "Remove component");
+      remove.addEventListener("click", () => { comps.splice(i, 1); renderComps(); refreshIfShown(); });
+
+      status.appendChild(statusText);
+      if (c.type === "dna") {
+        const lab = document.createElement("label");
+        lab.className = "check";
+        const cb = document.createElement("input");
+        cb.type = "checkbox"; cb.checked = c.ds;
+        cb.addEventListener("change", () => { c.ds = cb.checked; refreshIfShown(); });
+        lab.append(cb, " Double-stranded (also add the reverse complement strand)");
+        status.appendChild(lab);
+      }
+      updateStatus();
+
+      row.append(type, val, count, remove, status);
+      box.appendChild(row);
+    });
+  }
+
+  $("addComp").addEventListener("click", () => {
+    comps.push({ type: "ligand", value: "CCD_ATP", count: 1, ds: false });
+    renderComps(); refreshIfShown();
+  });
+
+  // ---------- UI ----------
+  function msg(cls, text) {
+    const d = document.createElement("div");
+    d.className = cls; d.textContent = text;
+    $("messages").appendChild(d);
+  }
+
+  function convert() {
+    $("messages").innerHTML = "";
+    $("resultSection").classList.remove("hidden");
+    // keep job names the user typed by hand when options change
+    const edits = {};
+    records.forEach((r, i) => { if (r.edited) edits[i + "\u0000" + r.name] = r.jobName; });
+    records = parseFasta($("fasta").value, $("firstWord").checked, $("stripStop").checked);
+    const prefix = $("prefix").value;
+
+    if (!records.length) {
+      msg("err", "No sequences found. Paste FASTA text or load a file.");
+      $("table").innerHTML = ""; $("preview").textContent = ""; setButtons(false);
+      return;
+    }
+
+    const seen = {};
+    records.forEach((r, i) => {
+      const key = i + "\u0000" + r.name;
+      if (key in edits) { r.jobName = edits[key]; r.edited = true; }
+      else r.jobName = prefix + (r.name || "seq_" + (i + 1));
+      seen[r.jobName] = (seen[r.jobName] || 0) + 1;
+    });
+    records.complexName = complexOverride !== null ? complexOverride : prefix + (baseName || "complex");
+
+    const empty = records.filter((r) => !r.sequence);
+    const invalid = records.filter((r) => r.sequence && !VALID.test(r.sequence));
+    const dups = Object.keys(seen).filter((k) => seen[k] > 1);
+    const seedCheck = parseSeeds($("seeds").value);
+
+    if (empty.length) msg("err", empty.length + " entr" + (empty.length > 1 ? "ies have" : "y has") + " an empty sequence: " + empty.map((r) => r.jobName).join(", "));
+    if (invalid.length) msg("warn", invalid.length + " sequence(s) contain characters other than the 20 standard amino acids (highlighted below). AlphaFold Server will reject them.");
+    if (dups.length) msg("warn", "Duplicate job names: " + dups.join(", ") + ". Edit them below to tell results apart.");
+    if (seedCheck.bad.length) msg("err", "Invalid seeds (must be whole numbers 0 to 4294967295): " + seedCheck.bad.join(", "));
+
+    renderTable(invalid);
+    refresh();
+  }
+
+  function renderTable(invalid) {
+    const t = $("table");
+    const complex = $("mode").value === "complex";
+    $("nameHint").textContent = complex
+      ? "All sequences go into one job. Edit its name below."
+      : "You can edit job names in the table before downloading.";
+    let html = "";
+    if (complex) {
+      html += '<tr><th>Job name</th><td colspan="2"><input type="text" data-complex value=""></td></tr>';
+    }
+    html += "<tr><th>#</th><th>" + (complex ? "Header" : "Job name") + "</th><th>Length</th><th>Status</th></tr>";
+    records.forEach((r, i) => {
+      const bad = invalid.includes(r);
+      const badChars = bad ? [...new Set(r.sequence.replace(/[ACDEFGHIKLMNPQRSTVWY]/g, ""))].join(" ") : "";
+      html += "<tr><td class='num'>" + (i + 1) + "</td><td>" +
+        (complex ? escapeHtml(r.name) : '<input type="text" data-i="' + i + '">') +
+        "</td><td class='num'>" + r.sequence.length + "</td><td>" +
+        (!r.sequence ? '<span class="err">empty</span>' :
+          bad ? '<span class="warn">invalid: ' + escapeHtml(badChars) + "</span>" : '<span class="ok">OK</span>') +
+        "</td></tr>";
+    });
+    t.innerHTML = html;
+    t.querySelectorAll("input[data-i]").forEach((inp) => {
+      inp.value = records[+inp.dataset.i].jobName;
+      inp.addEventListener("input", () => {
+        const r = records[+inp.dataset.i];
+        r.jobName = inp.value; r.edited = true; refresh();
+      });
+    });
+    const ci = t.querySelector("input[data-complex]");
+    if (ci) {
+      ci.value = records.complexName;
+      ci.addEventListener("input", () => { records.complexName = complexOverride = ci.value; refresh(); });
+    }
+  }
+
+  function refresh() {
+    const jobs = buildJobs();
+    $("preview").textContent = JSON.stringify(jobs, null, 2);
+    setButtons(true);
+    const total = jobs.length;
+    const summary = $("messages").querySelector(".summary") || document.createElement("div");
+    summary.className = "summary";
+    const added = compEntities().length;
+    const skipped = comps.filter((c) => !compStatus(c).ok).length;
+    summary.innerHTML = '<span class="ok">' + records.length + " sequence(s) → " + total + " job(s)" +
+      (added ? ", each with " + added + " extra component(s)" : "") + "</span>" +
+      (skipped ? '<br><span class="bad">' + skipped + " component(s) in step 3 have a problem and are not included.</span>" : "");
+    $("messages").prepend(summary);
+  }
+
+  function setButtons(on) { $("download").disabled = !on; $("copy").disabled = !on; }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function save(name, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  $("download").addEventListener("click", () => {
+    save(baseName + ".json", buildJobs());
+  });
+
+  $("copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(buildJobs(), null, 2));
+      $("copy").textContent = "Copied!";
+    } catch (e) { $("copy").textContent = "Copy failed"; }
+    setTimeout(() => ($("copy").textContent = "Copy JSON"), 1500);
+  });
+
+  // convert automatically shortly after the FASTA text is pasted or edited
+  let typingTimer;
+  $("fasta").addEventListener("input", () => {
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => {
+      if ($("fasta").value.trim()) convert();
+      else $("resultSection").classList.add("hidden");
+    }, 300);
+  });
+  $("clear").addEventListener("click", () => {
+    $("fasta").value = ""; fileInput.value = ""; baseName = "alphafold_jobs";
+    records = []; complexOverride = null;
+    drop.textContent = "Drop a .fasta / .fa / .txt file here, or click to choose one";
+    $("resultSection").classList.add("hidden");
+  });
+  ["mode", "count", "seeds", "useTemplate", "firstWord", "stripStop", "prefix"].forEach((id) =>
+    $(id).addEventListener("input", () => { if (!$("resultSection").classList.contains("hidden")) convert(); }));
+})();
+</script>
+</body>
+</html>
